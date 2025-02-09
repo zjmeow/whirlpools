@@ -165,6 +165,52 @@ pub fn handler<'info>(
     )
 }
 
+pub fn get_output(
+    mut accounts: SwapV2,
+    amount: u64,
+    other_amount_threshold: u64,
+    sqrt_price_limit: u128,
+    amount_specified_is_input: bool,
+    a_to_b: bool,
+) -> Result<(u64)> {
+    let whirlpool = &mut accounts.whirlpool;
+    let clock = Clock::get()?;
+    let timestamp = to_timestamp_u64(clock.unix_timestamp)?;
+    let builder = SparseSwapTickSequenceBuilder::try_from(
+        whirlpool,
+        a_to_b,
+        vec![
+            accounts.tick_array_0.to_account_info(),
+            accounts.tick_array_1.to_account_info(),
+            accounts.tick_array_2.to_account_info(),
+        ],
+        None,
+    )?;
+    let mut swap_tick_sequence = builder.build()?;
+
+    let swap_update = swap_with_transfer_fee_extension(
+        whirlpool,
+        &accounts.token_mint_a,
+        &accounts.token_mint_b,
+        &mut swap_tick_sequence,
+        amount,
+        sqrt_price_limit,
+        amount_specified_is_input,
+        a_to_b,
+        timestamp,
+    )?;
+    // amount_specified_is_input 必定为 true
+    let transfer_fee_excluded_output_amount = if a_to_b {
+        calculate_transfer_fee_excluded_amount(&accounts.token_mint_b, swap_update.amount_b)?.amount
+    } else {
+        calculate_transfer_fee_excluded_amount(&accounts.token_mint_a, swap_update.amount_a)?.amount
+    };
+    if transfer_fee_excluded_output_amount < other_amount_threshold {
+        return Ok(0);
+    }
+    Ok(transfer_fee_excluded_output_amount)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn swap_with_transfer_fee_extension<'info>(
     whirlpool: &Whirlpool,
