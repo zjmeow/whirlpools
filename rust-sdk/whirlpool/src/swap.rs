@@ -324,6 +324,41 @@ pub async fn swap_instructions(
     })
 }
 
+pub async fn get_output(
+    rpc: &RpcClient,
+    whirlpool_address: Pubkey,
+    amount: u64,
+    specified_mint: Pubkey,
+) -> Result<SwapQuote, Box<dyn Error>> {
+    let whirlpool_info = rpc.get_account(&whirlpool_address).await?;
+    let whirlpool = Whirlpool::from_bytes(&whirlpool_info.data)?;
+    let tick_arrays = fetch_tick_arrays_or_default(rpc, whirlpool_address, &whirlpool).await?;
+    let specified_token_a = specified_mint == whirlpool.token_mint_a;
+    let slippage_tolerance_bps = 0;
+    let current_epoch = rpc.get_epoch_info().await?.epoch;
+    let mint_infos = rpc
+        .get_multiple_accounts(&[whirlpool.token_mint_a, whirlpool.token_mint_b])
+        .await?;
+    let mint_a_info = mint_infos[0]
+        .as_ref()
+        .ok_or(format!("Mint a not found: {}", whirlpool.token_mint_a))?;
+    let mint_b_info = mint_infos[1]
+        .as_ref()
+        .ok_or(format!("Mint b not found: {}", whirlpool.token_mint_b))?;
+    let transfer_fee_a = get_current_transfer_fee(Some(mint_a_info), current_epoch);
+    let transfer_fee_b = get_current_transfer_fee(Some(mint_b_info), current_epoch);
+    let quote = SwapQuote::ExactIn(swap_quote_by_input_token(
+            amount,
+            specified_token_a,
+            slippage_tolerance_bps,
+            whirlpool.clone().into(),
+            tick_arrays.map(|x| x.1).into(),
+            transfer_fee_a,
+            transfer_fee_b,
+        ))?;
+    Ok(quote)
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
