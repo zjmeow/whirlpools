@@ -111,6 +111,29 @@ async fn fetch_tick_arrays_or_default(
     Ok(result)
 }
 
+async fn fetch_tick_arrays_address(
+    whirlpool_address: Pubkey,
+    whirlpool: &Whirlpool,
+) -> Result<Vec<Pubkey>, Box<dyn Error>> {
+    let tick_array_start_index =
+        get_tick_array_start_tick_index(whirlpool.tick_current_index, whirlpool.tick_spacing);
+    let offset = whirlpool.tick_spacing as i32 * TICK_ARRAY_SIZE as i32;
+    let tick_array_indexes = [
+        tick_array_start_index,
+        tick_array_start_index + offset,
+        tick_array_start_index + offset * 2,
+        tick_array_start_index - offset,
+        tick_array_start_index - offset * 2,
+    ];
+    let tick_array_addresses: Vec<Pubkey> = tick_array_indexes
+        .iter()
+        .map(|&x| get_tick_array_address(&whirlpool_address, x).map(|y| y.0))
+        .collect::<Result<Vec<Pubkey>, _>>()?;
+    Ok(tick_array_addresses)
+}
+
+
+
 /// Generates the instructions necessary to execute a token swap.
 ///
 /// This function generates instructions for executing swaps, supporting both exact input and exact output scenarios.
